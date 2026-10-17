@@ -6,125 +6,217 @@
 [![Pandas](https://img.shields.io/badge/pandas-%23150458.svg?logo=pandas&logoColor=white)](https://pandas.pydata.org/)
 [![Jupyter](https://img.shields.io/badge/Jupyter-%23F37626.svg?logo=Jupyter&logoColor=white)](https://jupyter.org/)
 
-A zero-framework, first-principles implementation of a multi-layer deep neural network (MLP) built entirely in **Python & NumPy** for binary survival classification on the Kaggle Titanic dataset.
+A zero-framework, first-principles implementation of a multi-layer deep neural network (Multi-Layer Perceptron) built entirely in **Python & NumPy** for binary survival classification on the Titanic dataset.
 
 ---
 
 ## Table of Contents
-- [Why Build From Scratch?](#why-build-from-scratch)
+- [Overview](#overview)
 - [Neural Network Architecture](#neural-network-architecture)
-- [Mathematical Derivations](#mathematical-derivations)
-  - [He & Xavier/Glorot Initialization](#he--xavierglorot-initialization)
+- [Mathematical Framework](#mathematical-framework)
+  - [Weight Initialization (He & Xavier/Glorot)](#weight-initialization-he--xavierglorot)
   - [Forward Propagation](#forward-propagation)
-  - [Loss Formulation (Binary Cross-Entropy)](#loss-formulation-binary-cross-entropy)
-  - [Analytical Backpropagation & Gradients](#analytical-backpropagation--gradients)
+  - [Loss Function (Binary Cross-Entropy)](#loss-function-binary-cross-entropy)
+  - [Vectorized Backpropagation & Gradients](#vectorized-backpropagation--gradients)
 - [Data Preprocessing Pipeline](#data-preprocessing-pipeline)
 - [Project Structure](#project-structure)
 - [Installation & Setup](#installation--setup)
 - [Usage Guide](#usage-guide)
-  - [Running the Interactive Jupyter Notebook](#running-the-interactive-jupyter-notebook)
-  - [Running the CLI Pipeline](#running-the-cli-pipeline)
-- [Model Training & Results](#model-training--results)
+- [Training Dynamics & Results](#training-dynamics--results)
 - [License](#license)
 - [Author](#author)
 
 ---
 
-## Why Build From Scratch?
+## Overview
 
-Modern machine learning libraries (PyTorch, TensorFlow, Scikit-Learn) abstract away the underlying computational graph, autograd engines, and linear algebra routines.
+Modern deep learning frameworks often abstract away computational graphs, automatic differentiation, and tensor calculus. 
 
-This project implements every component manually to demonstrate deep understanding of:
-1. **Matrix calculus & analytical chain-rule gradient derivation**.
-2. **Numerical stability guards** (preventing floating-point underflow/overflow in log-loss and sigmoid).
-3. **Weight initialization theory** (variance preservation across non-linear activation functions).
-4. **Vectorized tensor computation** without high-level framework abstractions.
+This project implements an end-to-end neural network purely using linear algebra in NumPy to demonstrate:
+1. **Analytical Gradient Derivation**: Full manual backpropagation using the multivariate chain rule.
+2. **Numerical Stability**: Preventing floating-point underflow/overflow during log-loss computation and Sigmoid activation.
+3. **Variance-Preserving Initialization**: Utilizing He uniform initialization for ReLU hidden layers and Xavier/Glorot uniform initialization for the Sigmoid output layer.
+4. **Vectorized Matrix Computation**: Operating on batch matrices without iterative Python loops.
 
 ---
 
 ## Neural Network Architecture
 
-A fully-connected 3-layer feedforward architecture (Multi-Layer Perceptron):
+A fully connected 3-layer feedforward network (Multi-Layer Perceptron):
 
 ```
-Input Features (X)       [m × 8]
+Input Features (X)          [m × 8]
         │
    [W1, b1]  ──  He Uniform Init  ──  ReLU
         ▼
- Hidden Layer 1 (a1)     [m × 3]
+ Hidden Layer 1 (a1)        [m × 3]
         │
    [W2, b2]  ──  He Uniform Init  ──  ReLU
         ▼
- Hidden Layer 2 (a2)     [m × 3]
+ Hidden Layer 2 (a2)        [m × 3]
         │
    [W3, b3]  ──  Xavier Uniform Init  ──  Sigmoid
         ▼
-Output Probability (ŷ)   [m × 1]  ──>  Binary Survival Class (0 or 1)
+Output Probability (ŷ)      [m × 1]  ──>  Binary Survival Prediction (0 or 1)
 ```
 
 - **Input Dimension ($D_{\text{in}} = 8$)**: Preprocessed tabular passenger features.
 - **Hidden Layer 1 ($H_1 = 3$)**: Rectified Linear Unit ($\text{ReLU}$) activation.
 - **Hidden Layer 2 ($H_2 = 3$)**: Rectified Linear Unit ($\text{ReLU}$) activation.
-- **Output Layer ($D_{\text{out}} = 1$)**: Sigmoid activation producing calibrated survival probabilities $\hat{y} \in (0, 1)$.
+- **Output Layer ($D_{\text{out}} = 1$)**: Sigmoid activation producing survival probability $\hat{y} \in (0, 1)$.
 
 ---
 
-## Mathematical Derivations
+## Mathematical Framework
 
-### He & Xavier/Glorot Initialization
+### Weight Initialization (He & Xavier/Glorot)
 
-To prevent vanishing or exploding gradients during backpropagation:
-- **He Initialization (Layers 1 & 2 - ReLU)**:
-  $$W \sim \mathcal{U}\left(-\sqrt{\frac{6}{\text{fan\_in}}}, \; \sqrt{\frac{6}{\text{fan\_in}}}\right)$$
-- **Xavier / Glorot Initialization (Layer 3 - Sigmoid)**:
-  $$W_3 \sim \mathcal{U}\left(-\sqrt{\frac{6}{\text{fan\_in} + \text{fan\_out}}}, \; \sqrt{\frac{6}{\text{fan\_in} + \text{fan\_out}}}\right)$$
+To ensure gradients neither vanish nor explode across layers, weights are initialized based on fan-in and fan-out dimensions:
+
+For hidden layers with **ReLU** activation (Layers 1 and 2):
+
+$$
+W \sim \mathcal{U}\left(-\sqrt{\frac{6}{\text{fan}_{\text{in}}}}, \; \sqrt{\frac{6}{\text{fan}_{\text{in}}}}\right)
+$$
+
+For the output layer with **Sigmoid** activation (Layer 3):
+
+$$
+W_3 \sim \mathcal{U}\left(-\sqrt{\frac{6}{\text{fan}_{\text{in}} + \text{fan}_{\text{out}}}}, \; \sqrt{\frac{6}{\text{fan}_{\text{in}} + \text{fan}_{\text{out}}}}\right)
+$$
+
+Biases are initialized to zeros:
+
+$$
+b_1 = \mathbf{0}_{(1 \times 3)}, \quad b_2 = \mathbf{0}_{(1 \times 3)}, \quad b_3 = \mathbf{0}_{(1 \times 1)}
+$$
+
+---
 
 ### Forward Propagation
-For a batch of $m$ passenger records:
 
-$$\mathbf{Z}_1 = \mathbf{X} \mathbf{W}_1 + \mathbf{b}_1, \quad \mathbf{a}_1 = \max(0, \mathbf{Z}_1)$$
+For a batch of $m$ passenger observations represented by matrix $X \in \mathbb{R}^{m \times 8}$:
 
-$$\mathbf{Z}_2 = \mathbf{a}_1 \mathbf{W}_2 + \mathbf{b}_2, \quad \mathbf{a}_2 = \max(0, \mathbf{Z}_2)$$
+**Layer 1 (Input to Hidden 1):**
 
-$$\mathbf{Z}_3 = \mathbf{a}_2 \mathbf{W}_3 + \mathbf{b}_3, \quad \hat{\mathbf{y}} = \sigma(\mathbf{Z}_3) = \frac{1}{1 + e^{-\mathbf{Z}_3}}$$
+$$
+Z_1 = X W_1 + b_1
+$$
 
-### Loss Formulation (Binary Cross-Entropy)
-With numerical stability clipping $\hat{y}_{\text{clipped}} = \text{clip}(\hat{y}, 10^{-15}, 1 - 10^{-15})$:
+$$
+a_1 = \max(0, Z_1)
+$$
 
-$$\mathcal{L} = -\frac{1}{m} \sum_{i=1}^m \left[ y^{(i)} \log(\hat{y}^{(i)}) + (1 - y^{(i)}) \log(1 - \hat{y}^{(i)}) \right]$$
+**Layer 2 (Hidden 1 to Hidden 2):**
 
-### Analytical Backpropagation & Gradients
-Applying matrix differential calculus and the chain rule:
+$$
+Z_2 = a_1 W_2 + b_2
+$$
 
-1. **Output Error**:
-   $$\frac{\partial \mathcal{L}}{\partial \mathbf{Z}_3} = \frac{1}{m} (\hat{\mathbf{y}} - \mathbf{y})$$
-   $$\frac{\partial \mathcal{L}}{\partial \mathbf{W}_3} = \mathbf{a}_2^T \frac{\partial \mathcal{L}}{\partial \mathbf{Z}_3}, \quad \frac{\partial \mathcal{L}}{\partial \mathbf{b}_3} = \sum_{\text{rows}} \frac{\partial \mathcal{L}}{\partial \mathbf{Z}_3}$$
+$$
+a_2 = \max(0, Z_2)
+$$
 
-2. **Hidden Layer 2**:
-   $$\frac{\partial \mathcal{L}}{\partial \mathbf{a}_2} = \frac{\partial \mathcal{L}}{\partial \mathbf{Z}_3} \mathbf{W}_3^T$$
-   $$\frac{\partial \mathcal{L}}{\partial \mathbf{Z}_2} = \frac{\partial \mathcal{L}}{\partial \mathbf{a}_2} \odot \mathbb{I}(\mathbf{Z}_2 > 0)$$
-   $$\frac{\partial \mathcal{L}}{\partial \mathbf{W}_2} = \mathbf{a}_1^T \frac{\partial \mathcal{L}}{\partial \mathbf{Z}_2}, \quad \frac{\partial \mathcal{L}}{\partial \mathbf{b}_2} = \sum_{\text{rows}} \frac{\partial \mathcal{L}}{\partial \mathbf{Z}_2}$$
+**Layer 3 (Hidden 2 to Output):**
 
-3. **Hidden Layer 1**:
-   $$\frac{\partial \mathcal{L}}{\partial \mathbf{a}_1} = \frac{\partial \mathcal{L}}{\partial \mathbf{Z}_2} \mathbf{W}_2^T$$
-   $$\frac{\partial \mathcal{L}}{\partial \mathbf{Z}_1} = \frac{\partial \mathcal{L}}{\partial \mathbf{a}_1} \odot \mathbb{I}(\mathbf{Z}_1 > 0)$$
-   $$\frac{\partial \mathcal{L}}{\partial \mathbf{W}_1} = \mathbf{X}^T \frac{\partial \mathcal{L}}{\partial \mathbf{Z}_1}, \quad \frac{\partial \mathcal{L}}{\partial \mathbf{b}_1} = \sum_{\text{rows}} \frac{\partial \mathcal{L}}{\partial \mathbf{Z}_1}$$
+$$
+Z_3 = a_2 W_3 + b_3
+$$
 
-4. **Parameter Updates (Gradient Descent)**:
-   $$\theta \leftarrow \theta - \alpha \frac{\partial \mathcal{L}}{\partial \theta}, \quad \alpha = 0.05$$
+$$
+\hat{y} = \sigma(Z_3) = \frac{1}{1 + e^{-Z_3}}
+$$
+
+---
+
+### Loss Function (Binary Cross-Entropy)
+
+To ensure numerical stability when evaluating logarithms, predicted probabilities are clamped to $\hat{y} \in [\epsilon, 1 - \epsilon]$ where $\epsilon = 10^{-15}$. The binary cross-entropy loss $\mathcal{L}$ over $m$ samples is:
+
+$$
+\mathcal{L} = -\frac{1}{m} \sum_{i=1}^m \left[ y^{(i)} \ln(\hat{y}^{(i)}) + (1 - y^{(i)}) \ln(1 - \hat{y}^{(i)}) \right]
+$$
+
+---
+
+### Vectorized Backpropagation & Gradients
+
+Using matrix differential calculus and the chain rule:
+
+**Output Layer Gradients:**
+
+$$
+\frac{\partial \mathcal{L}}{\partial Z_3} = \frac{1}{m} (\hat{y} - y)
+$$
+
+$$
+\frac{\partial \mathcal{L}}{\partial W_3} = a_2^T \frac{\partial \mathcal{L}}{\partial Z_3}
+$$
+
+$$
+\frac{\partial \mathcal{L}}{\partial b_3} = \sum_{i=1}^m \frac{\partial \mathcal{L}}{\partial Z_3^{(i)}}
+$$
+
+**Hidden Layer 2 Gradients:**
+
+$$
+\frac{\partial \mathcal{L}}{\partial a_2} = \frac{\partial \mathcal{L}}{\partial Z_3} W_3^T
+$$
+
+$$
+\frac{\partial \mathcal{L}}{\partial Z_2} = \frac{\partial \mathcal{L}}{\partial a_2} \odot \mathbb{I}(Z_2 > 0)
+$$
+
+$$
+\frac{\partial \mathcal{L}}{\partial W_2} = a_1^T \frac{\partial \mathcal{L}}{\partial Z_2}
+$$
+
+$$
+\frac{\partial \mathcal{L}}{\partial b_2} = \sum_{i=1}^m \frac{\partial \mathcal{L}}{\partial Z_2^{(i)}}
+$$
+
+**Hidden Layer 1 Gradients:**
+
+$$
+\frac{\partial \mathcal{L}}{\partial a_1} = \frac{\partial \mathcal{L}}{\partial Z_2} W_2^T
+$$
+
+$$
+\frac{\partial \mathcal{L}}{\partial Z_1} = \frac{\partial \mathcal{L}}{\partial a_1} \odot \mathbb{I}(Z_1 > 0)
+$$
+
+$$
+\frac{\partial \mathcal{L}}{\partial W_1} = X^T \frac{\partial \mathcal{L}}{\partial Z_1}
+$$
+
+$$
+\frac{\partial \mathcal{L}}{\partial b_1} = \sum_{i=1}^m \frac{\partial \mathcal{L}}{\partial Z_1^{(i)}}
+$$
+
+**Parameter Update (Gradient Descent):**
+
+$$
+\theta \leftarrow \theta - \alpha \frac{\partial \mathcal{L}}{\partial \theta}
+$$
+
+with learning rate $\alpha = 0.05$.
 
 ---
 
 ## Data Preprocessing Pipeline
 
-- **Feature Selection**: Drops non-generalizable textual identifiers (`PassengerId`, `Name`, `Ticket`, `Cabin`).
-- **Missing Value Imputation**: Median strategy for `Age` and `Fare` to resist outlier skew.
-- **Categorical Encoding**:
-  - `Sex`: Binary transformation ($\text{female} \to 1, \text{male} \to 0$).
-  - `Embarked`: One-hot encoding (`Embarked_C`, `Embarked_S`, `Embarked_Q`).
+- **Feature Pruning**: Removes non-predictive metadata (`PassengerId`, `Name`, `Ticket`, `Cabin`).
+- **Median Imputation**: Replaces missing values in `Age` and `Fare` with training-set medians.
+- **Categorical Transformation**:
+  - `Sex`: Mapped to binary integers ($\text{female} \to 1, \text{male} \to 0$).
+  - `Embarked`: One-hot encoded across ports `C`, `S`, and `Q`.
 - **Feature Standardization**:
-  $$\mathbf{X}_{\text{norm}} = \frac{\mathbf{X} - \mu_{\text{train}}}{\sigma_{\text{train}}}$$
-  *(Parameters $\mu, \sigma$ are strictly fit on the training split and propagated to validation/test sets to eliminate data leakage).*
+
+$$
+X_{\text{norm}} = \frac{X - \mu}{\sigma}
+$$
+
+where mean $\mu$ and standard deviation $\sigma$ are calculated on the training split to prevent data leakage.
 
 ---
 
@@ -132,11 +224,10 @@ Applying matrix differential calculus and the chain rule:
 
 ```
 titanic-ml-from-scratch/
-├── TitanicML.ipynb      # Step-by-step interactive Jupyter Notebook
-├── titanic_nn.py        # Modular production CLI training & evaluation script
-├── requirements.txt     # Python dependencies (NumPy, Pandas, Matplotlib, Jupyter)
+├── TitanicML.ipynb      # Complete Jupyter Notebook (data cleaning, neural net, training)
+├── requirements.txt     # Python dependencies
 ├── LICENSE              # MIT License
-└── README.md            # Mathematical formulation & documentation
+└── README.md            # Documentation and mathematical formulation
 ```
 
 ---
@@ -144,15 +235,15 @@ titanic-ml-from-scratch/
 ## Installation & Setup
 
 ```bash
-# Clone the repository
-git clone https://github.com/MEsperon-Code/titanic-ml-from-scratch.git
+# Clone repository
+git clone https://github.com/MDiazEsperon/titanic-ml-from-scratch.git
 cd titanic-ml-from-scratch
 
-# Create and activate a virtual environment
+# Create and activate virtual environment
 python3 -m venv venv
 source venv/bin/activate  # On Windows: venv\Scripts\activate
 
-# Install dependencies
+# Install required packages
 pip install -r requirements.txt
 ```
 
@@ -160,45 +251,39 @@ pip install -r requirements.txt
 
 ## Usage Guide
 
-### Running the Interactive Jupyter Notebook
-Launch the notebook to inspect cell-by-cell execution, loss convergence, and derivations:
+Launch the Jupyter Notebook to explore data preprocessing, model implementation, and training:
+
 ```bash
 jupyter notebook TitanicML.ipynb
 ```
 
-### Running the CLI Pipeline
-You can run the model directly from the command line:
-```bash
-# Run training (uses train_titanicml.csv or generates synthetic validation data if CSV absent)
-python titanic_nn.py --epochs 8000 --lr 0.05
-```
-
-Optional CLI parameters:
-- `--train-path`: Custom path to training CSV (default: `train_titanicml.csv`).
-- `--test-path`: Custom path to test CSV (default: `test_titanicml.csv`).
-- `--epochs`: Total iterations for gradient descent (default: `8000`).
-- `--lr`: Learning rate step size (default: `0.05`).
+The notebook contains the complete pipeline:
+1. Data loading and feature engineering with Pandas.
+2. Parameter initialization.
+3. 8,000-epoch training loop with forward pass, loss tracking, and backpropagation.
+4. Validation loss monitoring.
+5. Test dataset prediction and submission generation.
 
 ---
 
-## Model Training & Results
+## Training Dynamics & Results
 
-During 8,000 epochs of training, the model achieves stable convergence:
-- **Initial Loss**: $\sim 0.69$ (random guess baseline)
-- **Converged Training Loss**: $\sim 0.40$
-- **Validation Loss**: $\sim 0.39$
-- **Classification Accuracy**: $\sim 81–83\%$ on held-out validation samples.
+During 8,000 iterations of gradient descent:
+- **Baseline Cross-Entropy Loss**: $\sim 0.693$ (untrained random initialization)
+- **Converged Training Loss**: $\sim 0.408$
+- **Validation Loss**: $\sim 0.390$
+- **Classification Performance**: Achieves stable convergence without exploding gradients or vanishing activations.
 
 ---
 
 ## License
 
-This project is licensed under the [MIT License](LICENSE).
+This project is open-source under the [MIT License](LICENSE).
 
 ---
 
 ## Author
 
 **Miguel Díaz Esperón**  
-- GitHub: [@MEsperon-Code](https://github.com/MEsperon-Code)
-- Repository: [titanic-ml-from-scratch](https://github.com/MEsperon-Code/titanic-ml-from-scratch)
+- GitHub: [@MDiazEsperon](https://github.com/MDiazEsperon)  
+- Repository: [titanic-ml-from-scratch](https://github.com/MDiazEsperon/titanic-ml-from-scratch)
